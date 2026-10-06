@@ -4,7 +4,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/lib/toast-context";
 
 export const metadata: Metadata = {
-  title: "EduConecta — Demo",
+  title: "EduConecta",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

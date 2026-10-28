@@ -1,0 +1,4 @@
+Imagenes del proyecto (carpeta public/):
+  fondo.jpg ........ fondo del login
+  logo.png ......... logo del menu lateral
+  bienvenida.jpg ... imagen de la franja de bienvenida

@@ -5,7 +5,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/lib/toast-context";
 import { HOUR_PACKAGE_PRICE } from "@/lib/config";
-import { HourPackage, PaymentTransaction, TutorSettlement } from "@/lib/types";
+import { HourPackage, PaymentTransaction, PaypalStatus, TutorSettlement } from "@/lib/types";
+import PayPalCheckout from "@/components/PayPalCheckout";
 import { fmtDate, money, shortId, transactionStatusLabel } from "@/lib/format";
 
 function transactionKind(t: PaymentTransaction) {
@@ -54,6 +55,9 @@ export default function PagosTab() {
   const [tutorNames, setTutorNames] = useState<Record<string, string>>({});
   const [hours, setHours] = useState(5);
   const [buying, setBuying] = useState(false);
+  const [paypal, setPaypal] = useState<PaypalStatus>({ enabled: false, clientId: null, currency: "USD" });
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const payEnabled = paypal.enabled && Boolean(paypal.clientId);
 
   async function load() {
     if (!user) return;
@@ -64,6 +68,8 @@ export default function PagosTab() {
       setTransactions(txs);
 
       if (isStudent) {
+        const st = await api("payment", "/paypal/status", { auth: false }).catch(() => ({ enabled: false }));
+        setPaypal({ enabled: Boolean(st?.enabled), clientId: st?.clientId ?? null, currency: st?.currency || "USD" });
         setPackages(await api("payment", "/packages", { token }));
       }
       if (isTutor) {
@@ -96,11 +102,17 @@ export default function PagosTab() {
     }
     setBuying(true);
     try {
-      await api("payment", "/packages", {
+      const res = await api("payment", "/packages", {
         method: "POST",
         token,
         body: { hoursPurchased: h, amount: h * HOUR_PACKAGE_PRICE },
       });
+      if (res?.requiresPayment) {
+        showToast("Completa el pago con PayPal para recibir tus horas");
+        setPayingId(res.transactionId);
+        load();
+        return;
+      }
       showToast("Paquete comprado");
       load();
     } catch (e: any) {
@@ -136,6 +148,19 @@ export default function PagosTab() {
 
       {error && <p className="empty-note">{error}</p>}
 
+      {isStudent && payingId && payEnabled && (
+        <PayPalCheckout
+          transactionId={payingId}
+          clientId={paypal.clientId as string}
+          currency={paypal.currency}
+          onCancel={() => setPayingId(null)}
+          onDone={() => {
+            setPayingId(null);
+            load();
+          }}
+        />
+      )}
+
       {isStudent && !loading && (
         <section className="availability-card" style={{ marginTop: 0 }}>
           <div className="section-title">
@@ -156,12 +181,18 @@ export default function PagosTab() {
               <input readOnly value={`$${money((Math.floor(Number(hours)) || 0) * HOUR_PACKAGE_PRICE)}`} />
             </div>
             <button onClick={buyPackage} disabled={buying}>
-              {buying ? "Comprando…" : "Comprar paquete"}
+              {buying ? "Procesando…" : payEnabled ? "Pagar con PayPal" : "Comprar paquete"}
             </button>
           </div>
-          <p className="availability-notice">Pago simulado: no se usa ninguna tarjeta ni pasarela real.</p>
+          <p className="availability-notice">
+            {payEnabled
+              ? "Pago con PayPal (ambiente de pruebas): el valor se convierte a dólares con una tasa fija y se cobra en USD."
+              : "Pago simulado: no se usa ninguna tarjeta ni pasarela real."}
+          </p>
           {packages.length === 0 && <p className="empty-note">Aún no has comprado paquetes.</p>}
-          {packages.map((p) => (
+          {packages.map((p) => {
+            const pendingTx = transactions.find((t) => t.package_id === p.id && !t.booking_id && t.status !== "succeeded");
+            return (
             <div className="booking-row" key={p.id}>
               <div className="info">
                 <div>
@@ -169,11 +200,27 @@ export default function PagosTab() {
                 </div>
                 <div className="when">Comprado {fmtDate(p.purchased_at)}</div>
               </div>
-              <span className={`status-pill ${p.hours_remaining > 0 ? "status-approved" : "status-completed"}`}>
-                {p.hours_remaining > 0 ? "Con saldo" : "Agotado"}
-              </span>
+              {pendingTx ? (
+                <>
+                  <span className={`status-pill status-${pendingTx.status}`}>
+                    {pendingTx.status === "failed" ? "Pago rechazado" : "Pago pendiente"}
+                  </span>
+                  {payEnabled && !pendingTx.gateway_reference.endsWith(".cancelled") && (
+                    <div className="actions">
+                      <button className="small" onClick={() => setPayingId(pendingTx.id)}>
+                        {pendingTx.status === "failed" ? "Reintentar pago" : "Pagar"}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <span className={`status-pill ${p.hours_remaining > 0 ? "status-approved" : "status-completed"}`}>
+                  {p.hours_remaining > 0 ? "Con saldo" : "Agotado"}
+                </span>
+              )}
             </div>
-          ))}
+            );
+          })}
         </section>
       )}
 
@@ -230,6 +277,13 @@ export default function PagosTab() {
               </div>
             </div>
             <span className={`status-pill status-${t.status}`}>{transactionStatusLabel(t.status)}</span>
+            {isStudent && payEnabled && t.status !== "succeeded" && Number(t.amount) > 0 && !t.gateway_reference.endsWith(".cancelled") && !t.package_id && (
+              <div className="actions">
+                <button className="small" onClick={() => setPayingId(t.id)}>
+                  {t.status === "failed" ? "Reintentar pago" : "Pagar ahora"}
+                </button>
+              </div>
+            )}
             {isAdmin && t.status === "succeeded" && Number(t.amount) > 0 && (
               <div className="actions">
                 <button className="small danger" onClick={() => refund(t)}>

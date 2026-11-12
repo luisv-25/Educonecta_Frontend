@@ -189,3 +189,9 @@ export interface AnalyticsDashboard {
   tutorRetention: TutorRetentionKpi;
   trialConversion: TrialConversionKpi;
 }
+
+export interface PaypalStatus {
+  enabled: boolean;
+  clientId: string | null;
+  currency: string;
+}

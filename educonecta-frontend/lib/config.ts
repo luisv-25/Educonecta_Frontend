@@ -24,4 +24,10 @@ export const HOUR_PACKAGE_PRICE = 20000;
 // JSON de al menos este tamaño + 33% (ver backend-patch/LEEME.txt).
 export const MAX_PDF_MB = 5;
 
+// Ventana para entrar a la videollamada, medida desde la hora de la tutoría que el estudiante
+// eligió dentro del horario del tutor: se abre unos minutos antes y se cierra al terminar la
+// tutoría (la duración por defecto es de 60 min; es la misma que usa el servicio de reservas).
+export const JOIN_EARLY_MINUTES = 10;
+export const SESSION_MINUTES = 60;
+
 export type ServiceName = keyof typeof CFG;

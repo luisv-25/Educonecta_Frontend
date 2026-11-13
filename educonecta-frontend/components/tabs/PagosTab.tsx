@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/lib/toast-context";
 import { HOUR_PACKAGE_PRICE } from "@/lib/config";
-import { HourPackage, PaymentTransaction, PaypalStatus, TutorSettlement } from "@/lib/types";
+import { HourPackage, PaymentTransaction, PaypalStatus, PayoutSettlement, TutorSettlement } from "@/lib/types";
 import PayPalCheckout from "@/components/PayPalCheckout";
 import { fmtDate, money, shortId, transactionStatusLabel } from "@/lib/format";
 
@@ -31,12 +31,12 @@ function SettlementCard({ s }: { s: TutorSettlement }) {
       </div>
       {s.refundedAmount !== undefined && (
         <div className="stat-card">
-          <span>Reembolsado</span>
+          <span>Reembolsos descontados</span>
           <b>${money(s.refundedAmount)}</b>
         </div>
       )}
       <div className="stat-card highlight">
-        <span>A pagar al tutor</span>
+        <span>Neto por liquidar</span>
         <b>${money(s.netPayable)}</b>
       </div>
     </div>
@@ -52,6 +52,8 @@ export default function PagosTab() {
   const [packages, setPackages] = useState<HourPackage[]>([]);
   const [mySettlement, setMySettlement] = useState<TutorSettlement | null>(null);
   const [allSettlements, setAllSettlements] = useState<TutorSettlement[]>([]);
+  const [payouts, setPayouts] = useState<PayoutSettlement[]>([]);
+  const [generating, setGenerating] = useState(false);
   const [tutorNames, setTutorNames] = useState<Record<string, string>>({});
   const [hours, setHours] = useState(5);
   const [buying, setBuying] = useState(false);
@@ -73,10 +75,12 @@ export default function PagosTab() {
         setPackages(await api("payment", "/packages", { token }));
       }
       if (isTutor) {
-        setMySettlement(await api("payment", `/settlements/tutor/${user.id}`, { token }));
+        setMySettlement(await api("payment", `/payouts/open/tutor/${user.id}`, { token }));
+        setPayouts(await api("payment", "/payouts", { token }));
       }
       if (isAdmin) {
-        setAllSettlements(await api("payment", "/settlements", { token }));
+        setAllSettlements(await api("payment", "/payouts/open", { token }));
+        setPayouts(await api("payment", "/payouts", { token }));
         const tutors = await api("user", "/users?role=tutor", { auth: false }).catch(() => []);
         const names: Record<string, string> = {};
         for (const t of tutors) names[t.id] = t.fullName || t.email;
@@ -119,6 +123,35 @@ export default function PagosTab() {
       showToast(e.message, true);
     } finally {
       setBuying(false);
+    }
+  }
+
+  async function generatePayouts(tutorId?: string) {
+    setGenerating(true);
+    try {
+      const created: PayoutSettlement[] = await api("payment", "/payouts/generate", {
+        method: "POST",
+        token,
+        body: tutorId ? { tutorId } : {},
+      });
+      showToast(created.length ? `${created.length} liquidación(es) generada(s)` : "No hay saldo por liquidar");
+      load();
+    } catch (e: any) {
+      showToast(e.message, true);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function markPaid(p: PayoutSettlement) {
+    const reference = prompt(`Referencia de la transferencia de $${money(p.netAmount)} al tutor (opcional):`, "");
+    if (reference === null) return;
+    try {
+      await api("payment", `/payouts/${p.id}/paid`, { method: "POST", token, body: { reference } });
+      showToast("Liquidación marcada como pagada");
+      load();
+    } catch (e: any) {
+      showToast(e.message, true);
     }
   }
 
@@ -228,19 +261,64 @@ export default function PagosTab() {
         <section className="availability-card" style={{ marginTop: 0 }}>
           <div className="section-title">
             <h2>Mis ingresos</h2>
-            <span className="sub">Liquidación actual</span>
+            <span className="sub">Pendiente por liquidar</span>
           </div>
           <SettlementCard s={mySettlement} />
+          <p className="availability-notice">
+            Lo cobrado desde tu última liquidación. La administración hace el corte periódico y te transfiere el valor neto.
+          </p>
+        </section>
+      )}
+
+      {(isTutor || isAdmin) && !loading && (
+        <section className="availability-card" style={{ marginTop: 0, maxWidth: "none" }}>
+          <div className="section-title">
+            <h2>{isAdmin ? "Liquidaciones" : "Mis liquidaciones"}</h2>
+            <span className="sub">{payouts.length} registro(s)</span>
+          </div>
+          {payouts.length === 0 && <p className="empty-note">Todavía no se ha generado ninguna liquidación.</p>}
+          {payouts.map((p) => (
+            <div className="booking-row" key={p.id}>
+              <div className="info">
+                <div>
+                  <b>${money(p.netAmount)}</b>
+                  {isAdmin && <> — {tutorNames[p.tutorId] || "Tutor " + shortId(p.tutorId)}</>}
+                </div>
+                <div className="when">
+                  Corte {fmtDate(p.createdAt)} · {p.transactionsCount} cobro(s) · bruto ${money(p.grossAmount)} · comisión $
+                  {money(p.commissionAmount)}
+                  {p.refundedAmount > 0 && <> · reembolsos −${money(p.refundedAmount)}</>}
+                  {p.status === "paid" && (
+                    <>
+                      {" "}
+                      · pagada {fmtDate(p.paidAt || "")}
+                      {p.paymentReference ? ` (ref. ${p.paymentReference})` : ""}
+                    </>
+                  )}
+                </div>
+              </div>
+              <span className={`status-pill ${p.status === "paid" ? "status-approved" : "status-pending"}`}>
+                {p.status === "paid" ? "Pagada" : "Pendiente de pago"}
+              </span>
+              {isAdmin && p.status === "pending" && (
+                <div className="actions">
+                  <button className="small" onClick={() => markPaid(p)}>
+                    Marcar pagada
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
         </section>
       )}
 
       {isAdmin && !loading && (
         <section className="availability-card" style={{ marginTop: 0, maxWidth: "none" }}>
           <div className="section-title">
-            <h2>Liquidación por tutor</h2>
-            <span className="sub">{allSettlements.length} tutor(es) con cobros</span>
+            <h2>Saldo pendiente por tutor</h2>
+            <span className="sub">{allSettlements.length} tutor(es) con saldo sin liquidar</span>
           </div>
-          {allSettlements.length === 0 && <p className="empty-note">Todavía no hay cobros exitosos a tutores.</p>}
+          {allSettlements.length === 0 && <p className="empty-note">No hay cobros pendientes de liquidar.</p>}
           {allSettlements.map((s) => (
             <div className="booking-row" key={s.tutorId}>
               <div className="info">
@@ -249,11 +327,24 @@ export default function PagosTab() {
                 </div>
                 <div className="when">
                   {s.transactionsCount} cobro(s) · total ${money(s.grossAmount)} · comisión ${money(s.commissionRetained)}
+                  {(s.refundedAmount || 0) > 0 && <> · reembolsos −${money(s.refundedAmount || 0)}</>}
                 </div>
               </div>
-              <b>A pagar: ${money(s.netPayable)}</b>
+              <b>A liquidar: ${money(s.netPayable)}</b>
+              {s.netPayable > 0 && (
+                <div className="actions">
+                  <button className="small" disabled={generating} onClick={() => generatePayouts(s.tutorId)}>
+                    Liquidar
+                  </button>
+                </div>
+              )}
             </div>
           ))}
+          {allSettlements.some((s) => s.netPayable > 0) && (
+            <button style={{ marginTop: 10 }} disabled={generating} onClick={() => generatePayouts()}>
+              {generating ? "Generando…" : "Generar liquidación de todos"}
+            </button>
+          )}
         </section>
       )}
 

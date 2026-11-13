@@ -97,6 +97,22 @@ export interface TutorSettlement {
   netPayable: number;
 }
 
+export interface PayoutSettlement {
+  id: string;
+  tutorId: string;
+  periodStart: string;
+  periodEnd: string;
+  transactionsCount: number;
+  grossAmount: number;
+  commissionAmount: number;
+  refundedAmount: number;
+  netAmount: number;
+  status: "pending" | "paid";
+  paymentReference: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
 export interface FeedbackRating {
   id: string;
   booking_id: string;

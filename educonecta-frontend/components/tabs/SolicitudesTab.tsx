@@ -114,7 +114,7 @@ export default function SolicitudesTab() {
                 )}
                 {b.status === "confirmed" && (
                   <>
-                    <SessionActions bookingId={b.id} onEnded={load} />
+                    <SessionActions bookingId={b.id} scheduledAt={b.scheduled_at} onEnded={load} />
                     <button className="small secondary" onClick={() => toggleMaterials(b.id)}>
                       {openMaterials[b.id] ? "Ocultar material" : "Material"}
                     </button>

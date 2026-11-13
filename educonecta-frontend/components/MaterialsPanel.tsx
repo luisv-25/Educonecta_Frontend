@@ -22,6 +22,7 @@ export default function MaterialsPanel({ bookingId, canUpload }: { bookingId: st
   const [pdfLike, setPdfLike] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -91,16 +92,41 @@ export default function MaterialsPanel({ bookingId, canUpload }: { bookingId: st
     }
   }
 
+  // Descarga el material como archivo (con su nombre original). El servidor entrega una URL
+  // firmada y temporal; abrirla en una pestaña nueva después de una espera la bloquea el
+  // navegador, así que se baja el contenido y se guarda directamente.
   async function download(file: FileMetadata) {
+    setDownloadingId(file.id);
     try {
       const result = await api("content", `/files/${file.id}/download`, { token });
       if (!result.available) {
         showToast(result.message || "El almacenamiento no está configurado (modo simulado).", true);
         return;
       }
-      window.open(result.url, "_blank");
+      const save = (href: string) => {
+        const a = document.createElement("a");
+        a.href = href;
+        a.download = file.file_name;
+        a.rel = "noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      };
+      try {
+        const res = await fetch(result.url);
+        if (!res.ok) throw new Error(`Error ${res.status}`);
+        const blobUrl = URL.createObjectURL(await res.blob());
+        save(blobUrl);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      } catch (_) {
+        // Respaldo: descarga directa desde la URL firmada pidiendo "attachment".
+        save(`${result.url}${result.url.includes("?") ? "&" : "?"}download=${encodeURIComponent(file.file_name)}`);
+      }
+      showToast("Descargando " + file.file_name);
     } catch (e: any) {
       showToast(e.message, true);
+    } finally {
+      setDownloadingId(null);
     }
   }
 
@@ -135,8 +161,8 @@ export default function MaterialsPanel({ bookingId, canUpload }: { bookingId: st
               </div>
             </div>
             <div className="actions">
-              <button className="small" onClick={() => download(f)}>
-                Descargar
+              <button className="small" disabled={downloadingId === f.id} onClick={() => download(f)}>
+                {downloadingId === f.id ? "Descargando…" : "Descargar"}
               </button>
               {canUpload && (
                 <button className="small danger" onClick={() => remove(f)}>

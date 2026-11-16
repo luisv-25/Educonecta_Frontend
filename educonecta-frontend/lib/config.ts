@@ -3,17 +3,22 @@
 // del frontend (con posibilidad de overridearlas en build time con
 // variables de entorno de Vercel, pero nunca desde la UI ni el navegador
 // de quien usa la app).
+// Todo el frontend habla con UN solo punto de entrada: el API Gateway, que enruta cada petición
+// al microservicio correspondiente (por el primer segmento de la ruta: /auth, /tutors, /bookings...).
+// Se define con NEXT_PUBLIC_API_URL en Vercel. Cada servicio conserva su variable propia opcional
+// (NEXT_PUBLIC_<X>_SERVICE_URL) solo por si se necesita saltarse el gateway en una prueba puntual.
+const GATEWAY = process.env.NEXT_PUBLIC_API_URL || "https://educonecta-gateway.onrender.com/api/v1";
+
 export const CFG = {
-  user: process.env.NEXT_PUBLIC_USER_SERVICE_URL || "https://user-service-i7q4.onrender.com/api/v1",
-  catalog: process.env.NEXT_PUBLIC_CATALOG_SERVICE_URL || "https://catalog-service-uree.onrender.com/api/v1",
-  booking: process.env.NEXT_PUBLIC_BOOKING_SERVICE_URL || "https://booking-services-y22o.onrender.com/api/v1",
-  session: process.env.NEXT_PUBLIC_SESSION_SERVICE_URL || "https://session-services.onrender.com/api/v1",
-  payment: process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL || "https://payment-service-ogh1.onrender.com/api/v1",
-  feedback: process.env.NEXT_PUBLIC_FEEDBACK_SERVICE_URL || "https://feedback-service-o417.onrender.com/api/v1",
-  
-  content: process.env.NEXT_PUBLIC_CONTENT_SERVICE_URL || "https://content-service-rsbo.onrender.com/api/v1",
-  notification: process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || "https://notificacion-service-rlnh.onrender.com/api/v1",
-  analytics: process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || "https://analytics-service-ejtf.onrender.com/api/v1",
+  user: process.env.NEXT_PUBLIC_USER_SERVICE_URL || GATEWAY,
+  catalog: process.env.NEXT_PUBLIC_CATALOG_SERVICE_URL || GATEWAY,
+  booking: process.env.NEXT_PUBLIC_BOOKING_SERVICE_URL || GATEWAY,
+  session: process.env.NEXT_PUBLIC_SESSION_SERVICE_URL || GATEWAY,
+  payment: process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL || GATEWAY,
+  feedback: process.env.NEXT_PUBLIC_FEEDBACK_SERVICE_URL || GATEWAY,
+  content: process.env.NEXT_PUBLIC_CONTENT_SERVICE_URL || GATEWAY,
+  notification: process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || GATEWAY,
+  analytics: process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || GATEWAY,
 } as const;
 
 // Valor (COP) de cada hora dentro de un paquete prepagado. El servicio de pagos
